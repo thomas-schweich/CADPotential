@@ -4,27 +4,33 @@ as well as various related utility methods.
 
 Dan Morris' Voxelizer can be found here: http://dmorris.net/projects/voxelizer/
 
-Running the script from the command line provides options for loading a single .voxels file or multiple files into a
-single Voxels python object (declared below). The script retains all information in the file(s) except the file 
-header(s).
+Running the script from the command line provides options for loading a single .voxels file or multiple files, indicated
+by a file glob (using * as a wildcard), into a single `Voxels` Python object (declared below). 
+
+The script retains all information in the file(s) except the file header(s).
 
 The script can be run interactively, in which case the Voxels object resulting from the loaded file(s) can be accessed 
 through a variable called 'voxels', such as in the following example:
 
-$ python -i load_voxels.py -f myvoxels.voxels
-# Loading bar appears, etc...
+$ python -i load_voxels.py myvoxels_*.voxels
 >>> voxels.to_set()
 {(0, 0, 0), (0, 1, 0) ... }
->>> voxels.get_all_voxels()[0]
+>>> first_voxel = voxels.get_all_voxels()[0]
+>>> first_voxel
 <__main__.VoxelfileVoxel object at 0x0000000006A3FEC8>
->>> voxels.get_all_voxels()[0].has_normal
+>>> first_voxel.i
+0
+>>> first_voxel.has_normal
 1
+>>> voxels.plot_graph()
+# Graph appears
+# etc... 
 
-where 'myvoxels.voxels' is the name of your .voxels file. The set resulting from the call to voxels.to_set() would
-contain the positions of each voxel from the file. The VoxelfileVoxel object resulting from the call to voxels.voxels[0]
-would be the first voxel in the file. ipython could also be used in place of python. The dollar-sign ($) is simply
-meant to indicate that the proceeding line is entered into a terminal (whose working directory is the one containing
-the script).
+where 'myvoxels_1.voxels', 'myvoxels_2.voxels'... are the names of your .voxels files.
+The set resulting from the call to voxels.to_set() would contain the positions of each voxel from the file. 
+The VoxelfileVoxel object resulting from the call to voxels.voxels[0] would be the first voxel in the file. 
+ipython could also be used in place of python. The dollar-sign ($) is simply meant to indicate that the proceeding 
+line is entered into a console (whose working directory is the one containing the script).
 
 Use `$ python load_voxels.py -h` for help. The module may also, of course, simply be imported by other scripts.
 
@@ -39,7 +45,6 @@ improved hardware.
 """
 
 import numpy as np
-import os
 import sys
 import math
 import argparse
@@ -157,8 +162,8 @@ class Voxels(object):
                                       '$ pip install pyqtgraph\n\n'
                                       'Alternatively, you can use Matplotlib and plot_graph_mpl() for (much slower) '
                                       'plotting.')
-
-        print 'Plotting %d voxels...' % len(array)
+        number_points = len(array)
+        print 'Plotting %d voxels...' % number_points
         app = pg.mkQApp()
         view = gl.GLViewWidget()
         view.show()
@@ -175,9 +180,18 @@ class Voxels(object):
         ygrid.scale(10, 10, 10)
         zgrid.scale(10, 10, 10)
 
-        scatter = gl.GLScatterPlotItem(pos=array)
+        color_gradient = np.ones((number_points, 4), dtype=np.float32)
+        # abs_ar = np.abs(array).astype(np.float32)
+        # color_gradient[:, 0] = abs_ar[:, 0] / np.max(abs_ar[:, 0])
+        # color_gradient[:, 1] = abs_ar[:, 1] / np.max(abs_ar[:, 1])
+        # color_gradient[:, 2] = abs_ar[:, 2] / np.max(abs_ar[:, 2])
+        color_gradient[:, 0] = np.linspace(0., 1., dtype=np.float32, num=number_points)
+        color_gradient[:, 1] = np.zeros(number_points, dtype=np.float32)
+        color_gradient[:, 2] = np.linspace(1., 0., dtype=np.float32, num=number_points)
+
+        scatter = gl.GLScatterPlotItem(pos=array, color=color_gradient)
+        scatter.setGLOptions('opaque')
         view.addItem(scatter)
-        view.pan(10, 10, 10)
         app.exec_()
 
     def add_voxel(self, object_header, voxel):
@@ -194,31 +208,14 @@ class Voxels(object):
         """ Returns an iterable of all voxels in no particular order """
         return list(itertools.chain.from_iterable(self.object_to_voxels.itervalues()))
 
-    def new_read_all(self, file_names, object_callback_func=None):
-        """ Reads all files in the given iterable 
+    def read_all(self, file_names, object_callback_func=None):
+        """ Reads all files in the given iterable of file names/globs
 
         If object_callback_func is specified, it is passed to each call to from_file.
         """
-
-        for f in file_names:
-            self.from_file(f), object_callback_func
-
-    def read_all(self, directory, file_prefix, file_ext, object_callback_func=None):
-        """ Reads all files in the given directory with the given prefix, a number, and the given extension 
-        
-        If object_callback_func is specified, it is passed to each call to from_file.
-        """
-
-        def filename(idx):
-            return os.path.join(directory, '%s%d%s' % (file_prefix, idx, file_ext))
-
-        i = 0
-        if os.path.isfile(filename(i)):
-            self.from_file(filename(i), object_callback_func)
-        i += 1
-        while os.path.isfile(filename(i)):
-            self.from_file(filename(i), object_callback_func)
-            i += 1
+        for g in file_names:
+            for f in glob.glob(g):
+                self.from_file(f, object_callback_func)
 
     def from_file(self, filename, object_callback_func=None):
         """ Read voxels from a .voxels file 
@@ -228,11 +225,10 @@ class Voxels(object):
          If object_callback_func is specified, it must be a function of two arguments: the first will be the
          ImmutableVoxelfileObjectHeader object which was read, and the second will be the filename that was used to
          access the object. If, in theory, there were multiple objects in the .voxels file, the function would be
-         called once per object. The use case is to associate some extra data with the objects such as real-world
-         units. Note that the object passed is _immutable_.
+         called once per object. The use case is to associate some extra data with the objects on a per-file basis.
+         Note that the object passed is _immutable_.
         """
         with open(filename, 'rb') as f:
-            # Read file header
             voxelfile_file_header = VoxelfileFileHeader()
             f.readinto(voxelfile_file_header)
             print 'Read file header for %s' % filename
@@ -251,38 +247,41 @@ class Voxels(object):
                 if object_callback_func:
                     object_callback_func(voxelfile_object_header, filename)
 
+    def scaled_voxel_tup_generator(self):
+        """ Returns a generator which creates 3-tuples of the _scaled_ i, j, k positions of each voxel """
+        return (((v.i + header.model_offset[0]) * header.model_scale_factor,
+                 (v.j + header.model_offset[1]) * header.model_scale_factor,
+                 (v.k + header.model_offset[2]) * header.model_scale_factor)
+                for header, voxel_group in self.object_to_voxels.iteritems() for v in
+                voxel_group)
+
+    def voxel_tup_generator(self):
+        """ Returns a generator which creates 3-tuples of the _unscaled_ i, j, k positions of each voxel """
+        return ((v.i, v.j, v.k) for voxel_group in self.object_to_voxels.itervalues() for v in voxel_group)
+
     def to_3col_array(self, scaled=False):
-        """ Returns a 3 column ndarray containing the i, j, k positions of each voxel 
+        """ Returns a 3 column ndarray containing the i, j, k positions of each voxel
         
         If kwarg 'scaled' is set to True, the resulting positions are scaled according to each VoxelfileVoxel's 
         model_scale_factor and model_offset variables such that the voxels should align with the mesh from which
-        they were originally created.
+        they were originally created. The returned values are then of type np.float32.
+        
+        Array creation is kept entirely within vectorized Numpy operations for optimal performance.
         """
-        out = np.zeros((len(self.get_all_voxels()), 3), np.float32)
+        total_num = len(self.get_all_voxels())
         if scaled:
-            i = 0
-            for header, voxel_group in self.object_to_voxels.iteritems():
-                for v in voxel_group:
-                    out[i][0] = (v.i + header.model_offset[0]) * header.model_scale_factor
-                    out[i][1] = (v.j + header.model_offset[1]) * header.model_scale_factor
-                    out[i][2] = (v.k + header.model_offset[2]) * header.model_scale_factor
-                    i += 1
+            return np.fromiter(itertools.chain.from_iterable(self.scaled_voxel_tup_generator()), dtype=np.float32,
+                               count=total_num * 3).reshape((total_num, 3))
         else:
-            for i, v in enumerate(self.get_all_voxels()):
-                out[i][0] = v.i
-                out[i][1] = v.j
-                out[i][2] = v.k
-        return out
+            return np.fromiter(itertools.chain.from_iterable(self.voxel_tup_generator()),
+                               dtype=np.int32, count=total_num * 3).reshape((total_num, 3))
 
     def to_set(self, scaled=False):
         """ Returns a set of 3-tuples containing the i, j, k positions of each voxel """
         if scaled:
-            return {((v.i + header.model_offset[0]) * header.model_scale_factor,
-                     (v.j + header.model_offset[1]) * header.model_scale_factor,
-                     (v.k + header.model_offset[2]) * header.model_scale_factor)
-                    for header, voxel_group in self.object_to_voxels.iteritems() for v in voxel_group}
+            return {s for s in self.scaled_voxel_tup_generator()}
         else:
-            return {(v.i, v.j, v.k) for v in self.get_all_voxels()}
+            return {u for u in self.voxel_tup_generator()}
 
     def plot_graph_mpl(self, show=True):
         """ Shows a graph of the voxels with Matplotlib (_significantly_ slower than the QTGraph implementation) 
@@ -313,27 +312,13 @@ class Voxels(object):
 def load_from_command_line():
     """ Loads the file(s) given by the command line arguments, plotting if requested """
     parser = argparse.ArgumentParser(description='Loads voxels from a .voxels file. '
-                                                 'Specify either a single file _or_ a group of files whose names follow'
-                                                 ' a pattern of <DIRECTORY>/<PREFIX>N<SUFFIX>, not including brackets, '
-                                                 'where N is a number beginning at 0 or 1 and incrementing.')
-    parser.add_argument('-f', '--filename', help='Name of individual file to read')
-    parser.add_argument('-d', '--directory', help='Directory containing the group of files')
-    parser.add_argument('-p', '--prefix', help='Prefix included in all file names in the group (optional)')
-    parser.add_argument('-s', '--suffix',
-                        help='Suffix, including file extension, which ends each file name in the group')
+                                                 'Specify either a single file or a glob of files.')
+    parser.add_argument('file', help='Name, group, or glob of file(s) to read', nargs='+')
     parser.add_argument('-g', '--graph', help='Plot a graph after loading', action='store_true')
-    parser.add_argument('--scaled', help='Scale the graph if graphed', action='store_true')
+    parser.add_argument('-s', '--scaled', help='Scale the graph if graphed', action='store_true')
     args = parser.parse_args()
-    if not args.filename and not args.directory and not args.prefix and not args.suffix:
-        print 'No options provided. Use `python load_voxels.py -h` for help.'
-        exit()
     vox = Voxels()
-    if args.filename:
-        vox.from_file(args.filename)
-    else:
-        vox.read_all(args.directory if args.directory else '',
-                     args.prefix if args.prefix else '',
-                     args.suffix if args.suffix else '')
+    vox.read_all(args.file)
     if args.graph:
         vox.plot_graph(scaled=args.scaled)
     return vox
