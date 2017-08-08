@@ -1,0 +1,105 @@
+
+import numpy as np
+import math
+
+# An important value we'll need is the gravitational constant G
+G = 6.62608*10**-5 # This is in mm^3/(g*s^2)
+
+# I'm going to assume that ALL distance units are in mm
+OneD_LengthOfVoxels = 1.0
+TotalHeightOfMassMatrix = 300 # As the source plate (and Al foam) are the widest and tallest components by far, with a radius of 14.35cm
+TotalWidthOfMassMatrix  = 300 # these values should be sufficant
+TotalDepthOfMassMatrix  = 200 # For how far the source assembly goes back, I estimate it is not much larger than the radius of the copper plate
+
+VolOfVoxels = OneD_LengthOfVoxels**3
+
+DensityOfAl = 2.7*10**-3        # Aluminum has a density of 2.7 g/cm^3
+DensityOfCu = 8.96*10**-3       # Copper has a density of 8.96 g/cm^3
+DensityOfAlFoam = 1.35*10**-4   # Al foam is ~5% the density of Al
+
+AlMass = DensityOfAl*VolOfVoxels
+CuMass = DensityOfCu*VolOfVoxels
+FoamMass = DensityOfAlFoam*VolOfVoxels
+
+#We need to know the distance between points volume where the potential is being calculated
+DistBetweenPointsInNewArray = 1.0
+ArrayVol = DistBetweenPointsInNewArray**3
+
+# We also need to define the volume that we are finding the potential over
+# Let's call Z the direction moving directly away from the source mass (i.e. parallel to the normal vector if the yaw position is Zero)
+# Let's call X the horizontal axis (perpendicular to Z)
+# And that leaves us with Y being the verticle component. Clearly these labels can be rotated if needed
+# I'm making a volume that is nearly 4" x 4" x 1.5" (X x Y x Z, as per the aforementioned labels)
+X_length = 101
+Y_length = 101	#First we need the physical size of the volume
+Z_length = 38
+
+# Now we find out how many steps (of the size we picked are in the length we set
+X_pnts = X_length/DistBetweenPointsInNewArray
+
+# And we need an interger value for the amount of points in the array
+array_x_size = int(round(X_pnts))
+
+# Doing it again for y & z
+Y_pnts = Y_length/DistBetweenPointsInNewArray
+array_y_size = int(round(Y_pnts))
+Z_pnts = Z_length/DistBetweenPointsInNewArray
+array_z_size = int(round(Z_pnts))
+
+# And finally we build the array for the potential with zeros
+s = (array_x_size, array_y_size, array_z_size)
+potential_array = np.zeros(s)
+
+# Now I assume that I have an array that has all of the points containing only 1 type of material from the voxelizer
+# I'm assuming these arrays are named Al_array, Al_foam_array, and Cu_array
+# And that Al_array[w][i] returns the wth voxel's ith component where Al_array[w] returns [x,y,z] which is the position of the voxel
+
+# This is the trickest part of this program for finding the potential, finding the distance from the vowel to the new volume.
+# We need to know one thing in paticular: What is the vector FROM the origin of the mass array TO the origin of the potential array. We'll call that vector V with components Vx, Vy, Vz
+# It is vitally important that the array points in the correct direction. I am assuming that the XY-plane that runs through the origin on the mass array is shared as the XY-plane (which also passes though origin of the potential
+Vx = 1.0
+Vy = 1.0
+Vz = 1.0
+
+
+MassProduct = AlMass*AlMass
+
+for voxel in Al_array:
+	for x in range(X_length):
+		for y in range(Y_length):
+			for z in range(Z_length):
+				distance_x = x + Vx - Al_array[voxel][0]
+				distance_y = y + Vy - Al_array[voxel][1]
+# notice that for z, the sign changes
+				distance_z = z + Vz + Al_array[voxel][2]
+				potential_array[x,y,z] = -(G*MassProduct)/( sqrt(distance_x**2 + distance_y**2 + distance_z**2)
+
+
+# Now we run though again, with the Aluminum Foam array
+MassProduct = AlMass*FoamMass
+
+for voxel in Al_foam_array:
+	for x in range(X_length):
+		for y in range(Y_length):
+			for z in range(Z_length):
+				distance_x = x + Vx - Al_foam_array[voxel][0]
+				distance_x = y + Vy - Al_foam_array[voxel][0]
+# notice that for z, the sign changes
+				distance_z = z + Vz + Al_foam_array[voxel][0]
+				potential_array[x,y,z] = potential_array[x,y,z] - (G*MassProduct)/( sqrt(distance_x**2 + distance_y**2 + distance_z**2)
+
+# Now we run though again, with the Copper array
+
+MassProduct = AlMass*CuMass
+
+for voxel in Cu_array:
+	for x in range(X_length):
+		for y in range(Y_length):
+			for z in range(Z_length):
+				distance_x = x + Vx - Cu_array[voxel][0]
+				distance_x = y + Vy - Cu_array[voxel][0]
+# Notice that for z, the sign changes
+				distance_z = z + Vz + Cu_array[voxel][0]
+				potential_array[x,y,z] = potential_array[x,y,z] - (G*MassProduct)/( sqrt(distance_x**2 + distance_y**2 + distance_z**2)
+
+# We now just need to save the potential
