@@ -180,14 +180,14 @@ class Voxels(object):
         ygrid.scale(10, 10, 10)
         zgrid.scale(10, 10, 10)
 
+        red_grad = np.abs(np.sin(np.linspace(0., np.pi, dtype=np.float32, num=number_points)))
+        green_grad = np.abs(np.sin(np.linspace(np.pi / 3, np.pi + np.pi / 3, dtype=np.float32, num=number_points)))
+        blue_grad = np.abs(
+            np.sin(np.linspace(2 * np.pi / 3, np.pi + 2 * np.pi / 3, dtype=np.float32, num=number_points)))
         color_gradient = np.ones((number_points, 4), dtype=np.float32)
-        # abs_ar = np.abs(array).astype(np.float32)
-        # color_gradient[:, 0] = abs_ar[:, 0] / np.max(abs_ar[:, 0])
-        # color_gradient[:, 1] = abs_ar[:, 1] / np.max(abs_ar[:, 1])
-        # color_gradient[:, 2] = abs_ar[:, 2] / np.max(abs_ar[:, 2])
-        color_gradient[:, 0] = np.linspace(0., 1., dtype=np.float32, num=number_points)
-        color_gradient[:, 1] = np.zeros(number_points, dtype=np.float32)
-        color_gradient[:, 2] = np.linspace(1., 0., dtype=np.float32, num=number_points)
+        color_gradient[:, 0] = red_grad
+        color_gradient[:, 1] = green_grad
+        color_gradient[:, 2] = blue_grad
 
         scatter = gl.GLScatterPlotItem(pos=array, color=color_gradient)
         scatter.setGLOptions('opaque')
@@ -282,6 +282,14 @@ class Voxels(object):
             return {s for s in self.scaled_voxel_tup_generator()}
         else:
             return {u for u in self.voxel_tup_generator()}
+
+    def geometric_center(self, obj_):
+        """ Returns the geometric center (as a 3-tuple of floats) of the voxel object """
+        vox = self.object_to_voxels[obj_]
+        border_voxels = np.array([[v.i, v.j, v.k] for v in vox if v.is_on_border]).astype(np.float32)
+        return ((np.max(border_voxels[:, 0]) + np.min(border_voxels[:, 0])) / 2,
+                (np.max(border_voxels[:, 1]) + np.min(border_voxels[:, 1])) / 2,
+                (np.max(border_voxels[:, 2]) + np.min(border_voxels[:, 2])) / 2)
 
     def plot_graph_mpl(self, show=True):
         """ Shows a graph of the voxels with Matplotlib (_significantly_ slower than the QTGraph implementation) 

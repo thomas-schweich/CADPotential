@@ -34,10 +34,11 @@ for obj in voxels.object_to_voxels.iterkeys():
     # avg_x = (np.max(all_i) + np.min(all_i)) / 2.
     # avg_y = (np.max(all_j) + np.min(all_j)) / 2.
     # avg_z = (np.max(all_k) + np.min(all_k)) / 2.
+    x_center, y_center, z_center = voxels.geometric_center(obj)
     out[start:start + object_length] = np.fromiter(
-        itertools.chain.from_iterable(((float(v.i) - vox[0].i) * units_per_voxel + loc[0],
-                                       (float(v.j) - vox[0].j) * units_per_voxel + loc[1],
-                                       (float(v.k) - vox[0].k) * units_per_voxel + loc[2]) for v in vox),
+        itertools.chain.from_iterable(((float(v.i) - x_center) + loc[0] * voxels_per_unit,
+                                       (float(v.j) - y_center) + loc[1] * voxels_per_unit,
+                                       (float(v.k) - z_center) + loc[2] * voxels_per_unit) for v in vox),
         dtype=np.float32, count=object_length * 3).reshape(object_length, 3)
     start += object_length
 
