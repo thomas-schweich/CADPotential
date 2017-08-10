@@ -7,10 +7,9 @@ All length units are assumed to be mm. The volume's material is assumed to be al
 from __future__ import division
 import pyopencl as cl
 import timeit
-
 import numpy as np
-import pyqtgraph
-import itertools
+import pyqtgraph as pg
+import pyqtgraph.opengl as gl
 
 G = 0.000062608
 
@@ -18,7 +17,7 @@ G = 0.000062608
 def make_cube(side_length):
     """ Generates a 2d array of 3-tuples containing the positions of each voxel in a cube of the given side length
     
-    The generated cube has an origin at (0, 0, 0). All coordinates are integers.
+    The generated cube has an origin at (0, 0, 0). All coordinates are 32 bit floats.
     """
     ## Create an empty array containing the cube of the side length number of points:
     cube = np.zeros((side_length ** 3, 3), dtype=np.float32)
@@ -49,6 +48,43 @@ def make_cube(side_length):
     return cube
 
 
+def create_pg_view():
+    """ Creates a PyQTGraph view with visible coordinate axes"""
+    view = gl.GLViewWidget()
+    view.show()
+    # xgrid = gl.GLGridItem(color=(1, 1, 1, 1))
+    # ygrid = gl.GLGridItem(color=(1, 1, 1, 1))
+    # zgrid = gl.GLGridItem(color=(1, 1, 1, 1))
+    # view.addItem(xgrid)
+    # view.addItem(ygrid)
+    # view.addItem(zgrid)
+    # xgrid.rotate(90, 0, 1, 0)
+    # ygrid.rotate(90, 1, 0, 0)
+    # xgrid.scale(10, 10, 10)
+    # ygrid.scale(10, 10, 10)
+    # zgrid.scale(10, 10, 10)
+    return view
+
+
+def plot_results(volume, mass, potentials):
+    """ Plots the results given the volume, mass, and the array of potentials """
+    app = pg.mkQApp()
+    view = create_pg_view()
+    # Create a color map for the volume
+    volume_colors = np.ones((len(volume), 4), dtype=np.float32)
+    potentials_normalized = potentials - np.min(potentials)
+    volume_colors[:, 0] = potentials_normalized / np.max(potentials_normalized)   # Make the red values reflect potentials values
+    volume_colors[:, 1] = 0     # Set green values to 0 for a purple gradient
+    volume_colors[:, 2] = .5    # Set blue values to 50%
+    volume_scatter = gl.GLScatterPlotItem(pos=volume, color=volume_colors)
+    mass_scatter = gl.GLScatterPlotItem(pos=mass, color=(0, 1, 0, 1))
+    volume_scatter.setGLOptions('opaque')
+    mass_scatter.setGLOptions('opaque')
+    view.addItem(volume_scatter)
+    view.addItem(mass_scatter)
+    app.exec_()
+
+
 def calculate_potentials_python(volume, mass, volume_material_mass, mass_material_mass):
     """ Easy to read python function which calculates potentials using two Python loops 
     
@@ -63,10 +99,7 @@ def calculate_potentials_python(volume, mass, volume_material_mass, mass_materia
 
 
 def calculate_potentials_numpy_vectorized(volume, mass, volume_material_mass, mass_material_mass):
-    """ Harder to read python function which calculates potentials only using numpy vectorized functions 
-
-    May actually be less memory efficient than the python implementation due to intermediate value creation
-    """
+    """ Harder to read python function which calculates potentials only using numpy vectorized functions """
     return np.fromiter(
         (np.sum((G * volume_material_mass * mass_material_mass) / np.sqrt(np.sum(np.square(volume_coord - mass), 1)))
          for volume_coord in volume),
@@ -86,21 +119,61 @@ def generate_opencl_objects(volume, mass):
     queue = cl.CommandQueue(ctx)
 
     ## Create buffers to send to device
+    # OpenCL float3 types actually use 2^2 = 4 32 bit blocks of memory. Thus, to pass OpenCL an array of float3s, we
+    # will simply populate the fourth column with zeros.
+
+    # Create new arrays with 4 columns instead of 3, populated with zeros
+    volume_vecs = np.zeros((len(volume), 4), dtype=np.float32)
+    mass_vecs = np.zeros((len(mass), 4), dtype=np.float32)
+
+    # Copy the old arrays into the new ones, leaving the fourth column just as zeros
+    volume_vecs[:, :-1] = volume
+    mass_vecs[:, :-1] = mass
+
     mf = cl.mem_flags
 
-    # Input buffers
-    volume_in = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=volume)
-    mass_in = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=mass)
+    # Copy the vector arrays into input buffers on the GPU
+    volume_in = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=volume_vecs)
+    mass_in = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=mass_vecs)
 
-    # Output buffer
+    # Create output buffer
     potentials = np.empty(len(volume), dtype=np.float32)
     potentials_out = cl.Buffer(ctx, mf.WRITE_ONLY, potentials.nbytes)
 
     ## Read and compile the opencl kernel
     with open('potential_kernel.cl') as kernel:
         prg = cl.Program(ctx, kernel.read()).build()
-    return {'queue': queue, 'program': prg, 'volume_in': volume_in, 'mass_in': mass_in,
-            'potentials_out': potentials_out}
+
+    return {'queue': queue, 'program': prg, 'volume_in': volume_in, 'mass_in': mass_in, 'mass_len': len(mass),
+            'potentials_out': potentials_out, 'out_ary': potentials}
+
+
+def calculate_potentials_opencl(cl_objects, volume_material_mass, mass_material_mass):
+    """ Calculates potentials using OpenCL 
+    
+    cl_objects:
+    - Uses cl_objects['volume_in'] as the input volume, and cl_objects['mass_in'] as the mass object.
+    - The PyOpenCL queue should be given as cl_objects['queue']
+    - The output buffer should be given as cl_objects['potentials_out']
+    - The empty output array should be given as cl_objects['out_ary']
+    - The built kernel should be given as cl_objects['program']
+        - The program should be compiled from a kernel named 'compute_potential' which takes the following arguments:
+            - __global const float3 *volume_matrix_in:    The matrix of positions representing the volume
+            - __global const float3 *mass_matrix_in:      The matrix of positions representing the mass
+            - const int size_mass_matrix:                 The number of positions in the mass matrix
+            - const float volume_material_mass:           The mass density of the material the volume matrix is made of
+            - const float mass_material_mass:             The mass density of the material the mass matrix is made of
+            - __global float *potential_matrix_out:       The output matrix
+    """
+    cl_objects['program'].compute_potential(cl_objects['queue'], cl_objects['out_ary'].shape, None,
+                                            cl_objects['volume_in'], cl_objects['mass_in'],
+                                            np.int32(cl_objects['mass_len']),
+                                            np.float32(volume_material_mass),
+                                            np.float32(mass_material_mass),
+                                            cl_objects['potentials_out'])
+    cl.enqueue_copy(cl_objects['queue'], cl_objects['out_ary'], cl_objects['potentials_out'])
+    cl_objects['queue'].finish()
+    return cl_objects['out_ary']
 
 
 def run_test(volume_side_length, mass_side_length, distance_apart, volume_material_mass, mass_material_mass):
@@ -109,21 +182,32 @@ def run_test(volume_side_length, mass_side_length, distance_apart, volume_materi
     mass = make_cube(mass_side_length)
 
     ## Keep the volume at the origin, while moving the mass such that the volume's nearest side is `distance_apart`
-    # mm away.
+    # mm away and it is centered relative to the mass.
     mass[:, 0] += volume_side_length + distance_apart
-    mass[:, 1] -= int(mass_side_length // 2)
-    mass[:, 2] -= int(mass_side_length // 2)
+    mass[:, 1] -= int((mass_side_length - volume_side_length) // 2)
+    mass[:, 2] -= int((mass_side_length - volume_side_length) // 2)
 
     ## Get results using Python and NumPy
     python_result = calculate_potentials_python(volume, mass, volume_material_mass, mass_material_mass)
     numpy_result = calculate_potentials_numpy_vectorized(volume, mass, volume_material_mass, mass_material_mass)
 
+    ## Get results using OpenCL
+    # Create necessary objects to interface with the GPU
+    opencl_objects = generate_opencl_objects(volume, mass)
+    opencl_result = calculate_potentials_opencl(opencl_objects, volume_material_mass, mass_material_mass)
+
     ## Make an assertion that calculate_potentials_python and calculate_potentials_numpy_vectorized yield the same
     # result. np.allclose measures equality within a small tolerance to allow for floating point error due to
     # architectural differences.
-    # If the values resulting from the calls are not all approximately equal, the program raises an AssertionError and
+    # If the values resulting from the calls are not all effectively equal, the program raises an AssertionError and
     # quits.
     assert np.allclose(python_result, numpy_result)
+
+    ## Make an assertion that calculate_potentials_opencl yields the same result as the two python functions.
+    #  It is now proven that all results are equal by transitive property.
+    assert np.allclose(numpy_result, opencl_result)
+
+    ## Indicate that the run was successful. If the program makes it to this point, that means all arrays were equal.
     print '%d potentials calculated. The run was successful. Performing timing...' % len(python_result)
 
     ## Recalculate, this time measuring the amount of time each method takes. Each method is used 10 times, and the
@@ -131,14 +215,17 @@ def run_test(volume_side_length, mass_side_length, distance_apart, volume_materi
     # passes the state of this function to the timeit module which takes a lot of time in of itself. However, the
     # relative results are useful.
     python_time = timeit.timeit(
-        lambda: calculate_potentials_python(volume, mass, volume_material_mass, mass_material_mass), number=10) / 10
+        lambda: calculate_potentials_python(volume, mass, volume_material_mass, mass_material_mass), number=2) / 2
     numpy_time = timeit.timeit(
         lambda: calculate_potentials_numpy_vectorized(volume, mass, volume_material_mass, mass_material_mass),
         number=10) / 10
+    cl_time = timeit.timeit(
+        lambda: calculate_potentials_opencl(opencl_objects, volume_material_mass, mass_material_mass), number=2) / 2
 
-    print 'Python took %fs, NumPy took %fs. These results are only useful relative to each other.' % (
-        python_time, numpy_time)
+    print 'Python took %fs, NumPy took %fs, and OpenCL took %fs. ' \
+          'These results are only useful relative to each other.' % (python_time, numpy_time, cl_time)
 
+    plot_results(volume, mass, opencl_result)
 
 if __name__ == '__main__':
-    run_test(5, 10, 1, .5, .5)
+    run_test(10, 15, 1, .5, .5)
