@@ -1,6 +1,23 @@
 """calculate_potentials.py
 
 Calculate the gravitational potential at each point in any given volume matrix due to any given mass matrix using OpenCL
+
+The module can be run interactively as in the following example:
+
+$ python -i calculate_potentials.py
+>>> VOLUME_MASS_DENSITY = 0.5                           # The mass density of the potential matrix
+>>> MASS_MASS_DENSITY = 0.5                             # The mass density of the mass matrix
+>>> volume = make_cube(100)                             # Create the potential matrix
+>>> mass = make_cube(10000)                             # Create the mass matrix
+>>> cl_objects = generate_opencl_objects(volume, mass)  # Create the OpenCL interface
+>>> result = calculate_potentials_opencl(cl_objects, VOLUME_MASS_DENSITY, MASS_MASS_DENSITY)
+>>> plot_results(volume, mass, result)                  # Look at the results
+>>> idx = 0                                             # An example index we wish to access
+>>> print 'The gravitational potential at (%f, %f, %f) is %f' % (volume[idx][0], volume[idx][1], volume[idx][2], 
+...                                                              result[idx])
+>>> import numpy as np                                  # Save the two matrices for future use:
+>>> np.savetxt('potentials.csv', result, delimiter=',')
+>>> np.savetxt('volume.csv', result, delimiter=',')
 """
 
 from __future__ import division
@@ -223,4 +240,7 @@ def calculate_example(num_mass_points, num_volume_points, min_distance_from_volu
 
 
 if __name__ == '__main__':
-    calculate_example(20000, 100000, 10, num_cubes=20000)
+    import __main__ as main
+
+    if hasattr(main, '__file__'):  # Run the example if the module is not being run interactively
+        calculate_example(20000, 100000, 10, num_cubes=20000)
