@@ -1,4 +1,4 @@
-# Load CAD File voxelizations and Quickly Analyze Gravitational Potentials
+# Load OBJ File Voxelizations and Quickly Analyze Gravitational Potentials
 
 Thomas Schweich, GEE Lab at Washington University in St. Louis. MIT Licence.
 
@@ -104,7 +104,7 @@ An arbitrary experimental apparatus and volume may be input into the voxelizing 
 fed into the potential calculation module in order to obtain the potential analysis of a scientific experiment. This was the original
 intention of the project.
 
-## Licence
+## License
 
 Copyright 2017 Thomas Schweich and the GEE Lab at Washington University in St. Louis
 
