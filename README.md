@@ -1,6 +1,6 @@
 # Load OBJ File Voxelizations and Quickly Analyze Gravitational Potentials
 
-Thomas Schweich, GEE Lab at Washington University in St. Louis. MIT Licence.
+Thomas Schweich, GEE Lab at Washington University in St. Louis. MIT License.
 
 The repository serves two purposes, as:
 
@@ -39,16 +39,16 @@ $ python -i load_voxels.py myvoxels_*.voxels
 
 where 'myvoxels_1.voxels', 'myvoxels_2.voxels'... are the names of your .voxels files.
 
-The set resulting from the call to voxels.to_set() would contain the positions of each voxel from the file.
-The VoxelfileVoxel object resulting from the call to voxels.voxels[0] would be the first voxel in the file.
-ipython could also be used in place of python. The dollar-sign ($) is simply meant to indicate that the proceeding
+The set resulting from the call to `voxels.to_set()` would contain the positions of each voxel from the file.
+The VoxelfileVoxel object resulting from `voxels.voxels[0]` would be the first voxel in the file.
+`ipython` could also be used in place of `python`. The dollar-sign (`$`) is simply meant to indicate that the proceeding
 line is entered into a console (whose working directory is the one containing the script).
 
 Use `$ python load_voxels.py -h` for help. The module may also, of course, simply be imported by other scripts.
 The Voxels object also contains methods for dealing with the concatenation of multiple .voxels files into a single
 object. This is due to the fact that the script was originally written for use with the voxelization of a complex CAD
 file which was divided into many small components. As a result, the script would theoretically work with multiple
-objects, as well.
+objects as well.
 
 The script has been tested to run relatively fluently with multi-million-voxel files, including plotting. The test was
 run on a laptop with a 2 core, 4 thread Intel i5 processor with 8GB RAM. Performance likely scales quite well with
@@ -76,7 +76,8 @@ The important function contained in this file is `calculate_potentials_opencl`, 
   The `generate_opencl_objects` takes the following parameters:
   - A 2d array of 3-vectors representing each point at which you would like the gravitational potential
   - A 2d array of 3-vectors representing each point of mass you would like to be accounted for in the calculations
-  The `calculate_potentials_opencl` function takes the following parameters:
+  
+ The `calculate_potentials_opencl` function takes the following parameters:
   - The result of your call to `generate_opencl_objects`
   - The mass density of the volume matrix material
   - The mass density of the mass matrix material
